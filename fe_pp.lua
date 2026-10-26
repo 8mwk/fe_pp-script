@@ -1,17 +1,29 @@
--- FE PP (Exact Block Model)
--- Replicates the rigid "L" shape fling welded to the leg.
+-- FE PP (Dih Model - Toggleable with E)
+-- Builds the model, anchors the player, and spins. Press E to toggle on/off.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
-local FLING_POWER = 10
-local SPIN_SPEED = 100
+local FLING_POWER = 15
+local SPIN_SPEED = 120
+local DIH_LENGTH = 12
+local DIH_THICKNESS = 1.5
 
-local blockModel = nil
+local dihModel = nil
 local spinConnection = nil
+local rootAnchor = nil
+local isToggled = false
 
-local function createBlock()
+local function destroyDih()
+    if dihModel then dihModel:Destroy() dihModel = nil end
+    if rootAnchor then rootAnchor:Destroy() rootAnchor = nil end
+    if spinConnection then spinConnection:Disconnect() spinConnection = nil end
+    isToggled = false
+end
+
+local function createDih()
     local char = LocalPlayer.Character
     if not char then return end
     
@@ -19,66 +31,98 @@ local function createBlock()
     local leg = char:FindFirstChild("Left Leg") or char:FindFirstChild("LeftUpperLeg") or char:FindFirstChild("Right Leg")
     if not root or not leg then return end
 
-    if blockModel then blockModel:Destroy() end
+    destroyDih()
+    isToggled = true
 
-    -- Create the main model container
-    blockModel = Instance.new("Model")
-    blockModel.Name = "FEPP_Model"
-    blockModel.Parent = char
+    -- Anchor the player
+    rootAnchor = Instance.new("Part")
+    rootAnchor.Name = "FEPP_Anchor"
+    rootAnchor.Size = Vector3.new(1, 1, 1)
+    rootAnchor.Transparency = 1
+    rootAnchor.CanCollide = false
+    rootAnchor.Anchored = true
+    rootAnchor.Parent = char
+    rootAnchor.CFrame = root.CFrame
 
-    -- Main vertical block (attached to leg)
-    local part1 = Instance.new("Part")
-    part1.Name = "BaseBlock"
-    part1.Size = Vector3.new(2, 4, 2)
-    part1.Color = Color3.fromRGB(200, 200, 200)
-    part1.Material = Enum.Material.SmoothPlastic
-    part1.CanCollide = false
-    part1.Massless = true
-    part1.Anchored = false
-    part1.Parent = blockModel
-    part1.CFrame = leg.CFrame * CFrame.new(0, -1.5, 0)
+    local anchorWeld = Instance.new("Weld")
+    anchorWeld.Part0 = rootAnchor
+    anchorWeld.Part1 = root
+    anchorWeld.Parent = rootAnchor
 
-    -- Extended horizontal block (the fling arm)
-    local part2 = Instance.new("Part")
-    part2.Name = "ExtenderBlock"
-    part2.Size = Vector3.new(2, 2, 12)
-    part2.Color = Color3.fromRGB(200, 200, 200)
-    part2.Material = Enum.Material.SmoothPlastic
-    part2.CanCollide = false
-    part2.Massless = true
-    part2.Anchored = false
-    part2.Parent = blockModel
-    part2.CFrame = part1.CFrame * CFrame.new(0, 0, -6)
+    -- Create model
+    dihModel = Instance.new("Model")
+    dihModel.Name = "FEPP_Dih"
+    dihModel.Parent = char
 
-    -- Weld part1 to the leg
-    local weld1 = Instance.new("Weld")
-    weld1.Part0 = leg
-    weld1.Part1 = part1
-    weld1.C0 = leg.CFrame:Inverse() * part1.CFrame
-    weld1.Parent = part1
+    -- Base
+    local base = Instance.new("Part")
+    base.Name = "Base"
+    base.Shape = Enum.PartType.Ball
+    base.Size = Vector3.new(DIH_THICKNESS * 1.8, DIH_THICKNESS * 1.8, DIH_THICKNESS * 1.8)
+    base.Color = Color3.fromRGB(220, 220, 220)
+    base.Material = Enum.Material.SmoothPlastic
+    base.CanCollide = false
+    base.Massless = true
+    base.Anchored = false
+    base.Parent = dihModel
+    base.CFrame = leg.CFrame * CFrame.new(0, -1, 0)
 
-    -- Weld part2 to part1
-    local weld2 = Instance.new("Weld")
-    weld2.Part0 = part1
-    weld2.Part1 = part2
-    weld2.C0 = part1.CFrame:Inverse() * part2.CFrame
-    weld2.Parent = part2
+    -- Shaft
+    local shaft = Instance.new("Part")
+    shaft.Name = "Shaft"
+    shaft.Size = Vector3.new(DIH_THICKNESS, DIH_THICKNESS, DIH_LENGTH)
+    shaft.Color = Color3.fromRGB(220, 220, 220)
+    shaft.Material = Enum.Material.SmoothPlastic
+    shaft.CanCollide = false
+    shaft.Massless = true
+    shaft.Anchored = false
+    shaft.Parent = dihModel
+    shaft.CFrame = base.CFrame * CFrame.new(0, 0, -DIH_LENGTH / 2)
 
-    -- Spin and fling loop
+    -- Tip
+    local tip = Instance.new("Part")
+    tip.Name = "Tip"
+    tip.Shape = Enum.PartType.Ball
+    tip.Size = Vector3.new(DIH_THICKNESS * 1.2, DIH_THICKNESS * 1.2, DIH_THICKNESS * 1.2)
+    tip.Color = Color3.fromRGB(220, 220, 220)
+    tip.Material = Enum.Material.SmoothPlastic
+    tip.CanCollide = false
+    tip.Massless = true
+    tip.Anchored = false
+    tip.Parent = dihModel
+    tip.CFrame = shaft.CFrame * CFrame.new(0, 0, -DIH_LENGTH / 2)
+
+    -- Welds
+    local weldBase = Instance.new("Weld")
+    weldBase.Part0 = leg
+    weldBase.Part1 = base
+    weldBase.C0 = leg.CFrame:Inverse() * base.CFrame
+    weldBase.Parent = base
+
+    local weldShaft = Instance.new("Weld")
+    weldShaft.Part0 = base
+    weldShaft.Part1 = shaft
+    weldShaft.C0 = base.CFrame:Inverse() * shaft.CFrame
+    weldShaft.Parent = shaft
+
+    local weldTip = Instance.new("Weld")
+    weldTip.Part0 = shaft
+    weldTip.Part1 = tip
+    weldTip.C0 = shaft.CFrame:Inverse() * tip.CFrame
+    weldTip.Parent = tip
+
+    -- Spin
     local spin = 0
-    if spinConnection then spinConnection:Disconnect() end
     spinConnection = RunService.Heartbeat:Connect(function()
-        if not blockModel or not blockModel.Parent then return end
+        if not dihModel or not dihModel.Parent or not isToggled then return end
         
         spin = spin + math.rad(SPIN_SPEED)
-        -- Spin the base, which rotates the whole model
-        part1.CFrame = part1.CFrame * CFrame.Angles(0, spin, 0)
+        base.CFrame = base.CFrame * CFrame.Angles(0, spin, 0)
         
-        -- Fling logic
         for _, p in pairs(Players:GetPlayers()) do
             if p ~= LocalPlayer and p.Character then
                 local tRoot = p.Character:FindFirstChild("HumanoidRootPart")
-                if tRoot and (tRoot.Position - part1.Position).Magnitude < 15 then
+                if tRoot and (tRoot.Position - base.Position).Magnitude < (DIH_LENGTH + 5) then
                     local bv = Instance.new("BodyVelocity")
                     bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
                     bv.Velocity = Vector3.new(math.random(-100, 100), 150, math.random(-100, 100)) * FLING_POWER
@@ -90,26 +134,17 @@ local function createBlock()
     end)
 end
 
-local UserInputService = game:GetService("UserInputService")
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.E then
-        if blockModel and blockModel.Parent then
-            blockModel:Destroy()
-            blockModel = nil
-            if spinConnection then spinConnection:Disconnect() end
+        if isToggled then
+            destroyDih()
         else
-            createBlock()
+            createDih()
         end
     end
 end)
 
 LocalPlayer.CharacterAdded:Connect(function()
-    blockModel = nil
-    if spinConnection then spinConnection:Disconnect() end
-    task.wait(1)
-    createBlock()
+    destroyDih()
 end)
-
-task.wait(1)
-createBlock()
